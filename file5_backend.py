@@ -1,5 +1,3 @@
-
-
 import io
 import os
 import pickle
@@ -73,9 +71,6 @@ def is_model_ready() -> bool:
     return _READY
 
 
-# ─────────────────────────────────────────────────────────────
-# AUDIO PREPROCESSING
-# ─────────────────────────────────────────────────────────────
 def _load_audio(source):
     """
     Load audio from a file path (str/Path) or bytes buffer.
@@ -151,9 +146,6 @@ def preprocess_audio(source) -> np.ndarray | None:
     return audio
 
 
-# ─────────────────────────────────────────────────────────────
-# FEATURE EXTRACTION
-# ─────────────────────────────────────────────────────────────
 def _mfcc(audio: np.ndarray) -> np.ndarray:
     """40 MFCCs × {mean, std, max, min} = 160 features."""
     m = librosa.feature.mfcc(y=audio, sr=SAMPLE_RATE, n_mfcc=N_MFCC,
@@ -204,9 +196,6 @@ def extract_features(audio: np.ndarray) -> np.ndarray:
     ]).astype(np.float32)
 
 
-# ─────────────────────────────────────────────────────────────
-# INFERENCE ENGINE
-# ─────────────────────────────────────────────────────────────
 def _soft_vote(features_scaled: np.ndarray) -> np.ndarray:
     """
     Average predicted probabilities across all sub-models.
@@ -241,12 +230,10 @@ def run_prediction(source, confidence_threshold: float = 0.40) -> dict:
     if not _READY:
         return {"error": "Model is not loaded. Call load_echosense_model() first."}
 
-    # ── 1. Preprocess ──────────────────────────────────────
     audio = preprocess_audio(source)
     if audio is None:
         return {"error": "Audio rejected — file may be silent, too short, or corrupt."}
 
-    # ── 2. Extract features ────────────────────────────────
     try:
         feats = extract_features(audio)
     except Exception as e:
@@ -255,13 +242,10 @@ def run_prediction(source, confidence_threshold: float = 0.40) -> dict:
     if np.any(np.isnan(feats)) or np.any(np.isinf(feats)):
         return {"error": "Invalid feature values — try a different audio file."}
 
-    # ── 3. Scale ───────────────────────────────────────────
     feats_scaled = _SCALER.transform([feats])
 
-    # ── 4. Soft-vote ensemble ──────────────────────────────
     avg_proba = _soft_vote(feats_scaled)
 
-    # ── 5. Parse result ────────────────────────────────────
     best_idx  = int(np.argmax(avg_proba))
     best_conf = float(avg_proba[best_idx])
     label     = _LE.classes_[best_idx]
@@ -270,7 +254,6 @@ def run_prediction(source, confidence_threshold: float = 0.40) -> dict:
     category = parts[0]          if len(parts) == 2 else "unknown"
     species  = parts[1]          if len(parts) == 2 else label
 
-    # ── 6. Top-3 ───────────────────────────────────────────
     top3_idx = np.argsort(avg_proba)[-3:][::-1]
     top3 = []
     for idx in top3_idx:
@@ -281,14 +264,12 @@ def run_prediction(source, confidence_threshold: float = 0.40) -> dict:
             "confidence": round(float(avg_proba[idx]), 4),
         })
 
-    # ── 7. Mel spectrogram for display ────────────────────
     mel    = librosa.feature.melspectrogram(
         y=audio, sr=SAMPLE_RATE,
         n_mels=N_MELS, n_fft=N_FFT, hop_length=HOP_LENGTH
     )
     mel_db = librosa.power_to_db(mel, ref=np.max)
 
-    # ── 8. Confidence gate ─────────────────────────────────
     if best_conf < confidence_threshold:
         return {
             "prediction": "uncertain",
@@ -311,9 +292,6 @@ def run_prediction(source, confidence_threshold: float = 0.40) -> dict:
     }
 
 
-# ─────────────────────────────────────────────────────────────
-# WAVEFORM DATA  (for frontend visualisation)
-# ─────────────────────────────────────────────────────────────
 def get_waveform_data(source, max_points: int = 1000) -> tuple:
     """
     Load audio and return (time_array, amplitude_array) for plotting.
@@ -332,10 +310,6 @@ def get_waveform_data(source, max_points: int = 1000) -> tuple:
     times    = np.linspace(0, duration, len(audio))
     return times, audio
 
-
-# ─────────────────────────────────────────────────────────────
-# BATCH PREDICTION  (for research / dashboard pipelines)
-# ─────────────────────────────────────────────────────────────
 def batch_predict(file_paths: list,
                   confidence_threshold: float = 0.40) -> list:
     """
@@ -352,9 +326,6 @@ def batch_predict(file_paths: list,
     return results
 
 
-# ─────────────────────────────────────────────────────────────
-# QUICK TEST
-# ─────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import sys
 
